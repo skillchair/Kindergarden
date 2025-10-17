@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "234892824419",
+    "project_id": "kindergardenfinal2",
+    "storage_bucket": "kindergardenfinal2.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:234892824419:android:35d96219ad7a8d86be8d56",
+        "android_client_info": {
+          "package_name": "com.strucnjak.kindergarden"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAfe20gMutvdB21DglnUN8hU7nrQVasyZI"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
