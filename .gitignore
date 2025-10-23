@@ -1,0 +1,9 @@
+# Lokalni tajni fajlovi
+/app/src/main/res/values/secrets.xml
+
+# Android Studio build i konfiguracija
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
