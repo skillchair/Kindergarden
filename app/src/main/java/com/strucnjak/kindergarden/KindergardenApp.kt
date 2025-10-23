@@ -10,11 +10,9 @@ class KindergardenApp : Application() {
     override fun onCreate() {
         super.onCreate()
         FirebaseApp.initializeApp(this)
-        // Enable Firebase Realtime Database offline persistence
         try {
             FirebaseDatabase.getInstance().setPersistenceEnabled(true)
         } catch (_: Exception) {
-            // Ignore if already initialized
         }
     }
 }

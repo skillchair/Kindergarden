@@ -28,21 +28,21 @@ class ParkRepo(
     fun parksFlow(): Flow<List<Park>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
-                val list = snapshot.children.mapNotNull { it.getValue<Park>() }
+                val list = snapshot.children.mapNotNull {
+                    val park = it.getValue(Park::class.java)
+                    park?.copy(id = it.key ?: "")
+                }
                 trySend(list)
             }
-            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {
-                // ignore
-            }
+            override fun onCancelled(error: com.google.firebase.database.DatabaseError) {}
         }
         parksRef.addValueEventListener(listener)
         awaitClose { parksRef.removeEventListener(listener) }
     }
 
     suspend fun addPark(park: Park): Result<Unit> = runCatching {
-        val key = parksRef.push().key ?: error("No key")
-        parksRef.child(key).setValue(park).await()
-        // award points to author
+        val key = park.id.ifEmpty { parksRef.push().key ?: error("No key") }
+        parksRef.child(key).setValue(park.copy(id = key)).await()
         val uid = park.authorId
         if (uid.isNotEmpty()) {
             val userPointsRef = usersRef.child(uid).child("points")
@@ -55,14 +55,14 @@ class ParkRepo(
     suspend fun uploadImage(uri: Uri): Result<String> = runCatching {
         suspendCancellableCoroutine { cont ->
             MediaManager.get().upload(uri)
-                .unsigned("${com.strucnjak.kindergarden.BuildConfig.CLOUDINARY_UPLOAD_PRESET}")
+                .unsigned(com.strucnjak.kindergarden.BuildConfig.CLOUDINARY_UPLOAD_PRESET)
                 .callback(object : UploadCallback {
                     override fun onStart(requestId: String?) {}
                     override fun onProgress(requestId: String?, bytes: Long, totalBytes: Long) {}
                     override fun onSuccess(requestId: String?, resultData: MutableMap<Any?, Any?>?) {
                         val url = (resultData?.get("secure_url") as? String)
                             ?: (resultData?.get("url") as? String)
-                            ?: uri.toString()
+                            ?: ""
                         if (!cont.isCompleted) cont.resume(url)
                     }
                     override fun onError(requestId: String?, error: ErrorInfo?) {
@@ -76,10 +76,18 @@ class ParkRepo(
         }
     }
 
+
     suspend fun searchByText(query: String): List<Park> {
         val snap = parksRef.get().await()
-        val all = snap.children.mapNotNull { it.getValue<Park>() }
+        val all = snap.children.mapNotNull {
+            val park = it.getValue(Park::class.java)
+            park?.copy(id = it.key ?: "")
+        }
         val q = query.trim().lowercase()
-        return if (q.isEmpty()) all else all.filter { it.desc.lowercase().contains(q) || it.type.lowercase().contains(q) }
+        return if (q.isEmpty()) all else all.filter {
+            it.name.lowercase().contains(q) ||
+            it.desc.lowercase().contains(q) ||
+            it.type.lowercase().contains(q)
+        }
     }
 }

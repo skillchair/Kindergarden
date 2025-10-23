@@ -36,17 +36,14 @@ object AppModule {
     fun provideCloudinary(@ApplicationContext context: Context): MediaManager {
         val cloudName = BuildConfig.CLOUDINARY_CLOUD_NAME
         val uploadPreset = BuildConfig.CLOUDINARY_UPLOAD_PRESET
-        return try {
-            MediaManager.get()
-        } catch (_: Exception) {
-            val config = hashMapOf(
-                "cloud_name" to cloudName,
-                // For unsigned uploads in client app; define preset in Cloudinary
-                "unsigned" to "true",
-                "upload_preset" to uploadPreset
-            )
+        val config = hashMapOf(
+            "cloud_name" to cloudName,
+            "unsigned" to "true",
+            "upload_preset" to uploadPreset
+        )
+        try {
             MediaManager.init(context, config)
-            MediaManager.get()
-        }
+        } catch (_: Exception) { }
+        return MediaManager.get()
     }
 }

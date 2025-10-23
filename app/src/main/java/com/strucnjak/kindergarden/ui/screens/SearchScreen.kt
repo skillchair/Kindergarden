@@ -22,20 +22,36 @@ fun SearchScreen() {
     var current by remember { mutableStateOf<Location?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
 
-    // Load all parks once; for dynamic, convert to flow similar to Map
     LaunchedEffect(Unit) {
         parks = repo.searchByText("")
     }
 
-    // Get last known location
     LaunchedEffect(Unit) {
         val fused = LocationServices.getFusedLocationProviderClient(context)
-        fused.lastLocation.addOnSuccessListener { current = it }
+        try {
+            @Suppress("MissingPermission")
+            fused.lastLocation.addOnSuccessListener { current = it }
+        } catch (_: Exception) { }
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
         Text("Search", style = MaterialTheme.typography.headlineMedium)
         Spacer(Modifier.height(8.dp))
+
+        if (current == null) {
+            Card(
+                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)
+            ) {
+                Text(
+                    text = "Uključi lokaciju kako bi pronašao parkove i korisnike u blizini.",
+                    modifier = Modifier.padding(16.dp),
+                    color = MaterialTheme.colorScheme.onErrorContainer,
+                    style = MaterialTheme.typography.bodyMedium
+                )
+            }
+        }
+
         OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text("Text (desc/type)") }, singleLine = true)
         Spacer(Modifier.height(8.dp))
         OutlinedTextField(value = radius, onValueChange = { radius = it.filter { c -> c.isDigit() } }, label = { Text("Radius meters") }, singleLine = true)
@@ -53,9 +69,8 @@ fun SearchScreen() {
                     Text(p.desc)
                     Text("Type: ${p.type}", style = MaterialTheme.typography.bodySmall)
                 }
-                Divider()
+                HorizontalDivider()
             }
         }
     }
 }
-

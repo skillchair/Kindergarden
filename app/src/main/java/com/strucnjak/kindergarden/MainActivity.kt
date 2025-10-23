@@ -9,41 +9,67 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.core.app.ActivityCompat
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.cloudinary.android.MediaManager
 import com.strucnjak.kindergarden.ui.navigation.NavRoutes
-import com.strucnjak.kindergarden.ui.screens.LoginScreen
-import com.strucnjak.kindergarden.ui.screens.MapScreen
-import com.strucnjak.kindergarden.ui.screens.ProfileScreen
-import com.strucnjak.kindergarden.ui.screens.RegisterScreen
-import com.strucnjak.kindergarden.ui.screens.RankingsScreen
-import com.strucnjak.kindergarden.ui.screens.SearchScreen
+import com.strucnjak.kindergarden.ui.screens.*
 import com.strucnjak.kindergarden.ui.theme.KindergardenTheme
-import com.google.accompanist.permissions.ExperimentalPermissionsApi
-import com.google.accompanist.permissions.rememberPermissionState
+import com.google.firebase.auth.FirebaseAuth
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+
+        val cloudName = BuildConfig.CLOUDINARY_CLOUD_NAME
+        val uploadPreset = BuildConfig.CLOUDINARY_UPLOAD_PRESET
+        val config = hashMapOf(
+            "cloud_name" to cloudName,
+            "unsigned" to "true",
+            "upload_preset" to uploadPreset
+        )
+
+        try {
+            MediaManager.init(this, config)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
         setContent { AppRoot() }
+
+        val permissions = if (Build.VERSION.SDK_INT >= 33) {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION,
+                Manifest.permission.POST_NOTIFICATIONS
+            )
+        } else {
+            arrayOf(
+                Manifest.permission.ACCESS_FINE_LOCATION,
+                Manifest.permission.ACCESS_COARSE_LOCATION
+            )
+        }
+
+        ActivityCompat.requestPermissions(this, permissions, 100)
     }
 }
 
-@OptIn(ExperimentalPermissionsApi::class)
 @Composable
 fun AppRoot() {
     KindergardenTheme {
         Surface(color = MaterialTheme.colorScheme.background) {
-            // Ask for notifications permission on T+
-            if (Build.VERSION.SDK_INT >= 33) {
-                val notifPerm = rememberPermissionState(Manifest.permission.POST_NOTIFICATIONS)
-                LaunchedEffect(Unit) { notifPerm.launchPermissionRequest() }
-            }
             val nav = rememberNavController()
-            NavHost(navController = nav, startDestination = NavRoutes.Login.route) {
+            val startDestination = if (FirebaseAuth.getInstance().currentUser != null) {
+                NavRoutes.Map.route
+            } else {
+                NavRoutes.Login.route
+            }
+
+
+            NavHost(navController = nav, startDestination = startDestination) {
                 composable(NavRoutes.Login.route) {
                     LoginScreen(
                         onRegister = { nav.navigate(NavRoutes.Register.route) },
@@ -58,12 +84,20 @@ fun AppRoot() {
                 }
                 composable(NavRoutes.Map.route) {
                     MapScreen(
-                        onProfile = { nav.navigate(NavRoutes.Profile.route) }
+                        onProfile = { nav.navigate(NavRoutes.Profile.route) },
+                        onRankings = { nav.navigate(NavRoutes.Rankings.route) },
+                        onParkList = { nav.navigate(NavRoutes.ParkList.route) }
                     )
                 }
-                composable(NavRoutes.Profile.route) { ProfileScreen(onBack = { nav.popBackStack() }) }
-                composable(NavRoutes.Rankings.route) { RankingsScreen() }
+                composable(NavRoutes.Profile.route) {
+                    ProfileScreen(
+                        onBack = { nav.popBackStack() },
+                        onLogout = { nav.navigate(NavRoutes.Login.route) { popUpTo(0) } }
+                    )
+                }
+                composable(NavRoutes.Rankings.route) { RankingsScreen(onBack = { nav.popBackStack() }) }
                 composable(NavRoutes.Search.route) { SearchScreen() }
+                composable(NavRoutes.ParkList.route) { ParkListScreen(onBack = { nav.popBackStack() }) }
             }
         }
     }
