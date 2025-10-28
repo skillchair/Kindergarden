@@ -63,11 +63,16 @@ class LocationService : Service() {
             }
 
             db.child("locations").get().addOnSuccessListener { snap ->
+                val currentTime = System.currentTimeMillis()
                 val others = snap.children.mapNotNull { c ->
                     val id = c.key ?: return@mapNotNull null
                     if (id == uid) return@mapNotNull null
                     val lat = (c.child("lat").value as? Number)?.toDouble() ?: return@mapNotNull null
                     val lng = (c.child("lng").value as? Number)?.toDouble() ?: return@mapNotNull null
+                    val timestamp = (c.child("timestamp").value as? Number)?.toLong() ?: return@mapNotNull null
+
+                    if ((currentTime - timestamp) > 90000) return@mapNotNull null
+
                     id to (lat to lng)
                 }
 
@@ -133,11 +138,16 @@ class LocationService : Service() {
             }
 
             db.child("locations").get().addOnSuccessListener { snap ->
+                val currentTime = System.currentTimeMillis()
                 val others = snap.children.mapNotNull { c ->
                     val id = c.key ?: return@mapNotNull null
                     if (id == uid) return@mapNotNull null
                     val lat = (c.child("lat").value as? Number)?.toDouble() ?: return@mapNotNull null
                     val lng = (c.child("lng").value as? Number)?.toDouble() ?: return@mapNotNull null
+                    val timestamp = (c.child("timestamp").value as? Number)?.toLong() ?: return@mapNotNull null
+
+                    if ((currentTime - timestamp) > 90000) return@mapNotNull null
+
                     id to (lat to lng)
                 }
 

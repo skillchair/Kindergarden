@@ -8,8 +8,8 @@ import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.database.DataSnapshot
 import com.google.firebase.database.DatabaseReference
 import com.google.firebase.database.ValueEventListener
-import com.google.firebase.database.ktx.getValue
 import com.strucnjak.kindergarden.data.model.Park
+import com.strucnjak.kindergarden.util.Geo
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
@@ -25,12 +25,19 @@ class ParkRepo(
     private val parksRef get() = db.child("parks")
     private val usersRef get() = db.child("users")
 
-    fun parksFlow(): Flow<List<Park>> = callbackFlow {
+    fun parksFlow(userLat: Double? = null, userLng: Double? = null, radiusKm: Double = 24.0): Flow<List<Park>> = callbackFlow {
         val listener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
                 val list = snapshot.children.mapNotNull {
                     val park = it.getValue(Park::class.java)
                     park?.copy(id = it.key ?: "")
+                }.filter { park ->
+                    if (userLat != null && userLng != null) {
+                        val distance = Geo.distanceMeters(userLat, userLng, park.lat, park.lng)
+                        distance <= radiusKm * 1000
+                    } else {
+                        true
+                    }
                 }
                 trySend(list)
             }
@@ -69,19 +76,24 @@ class ParkRepo(
                         if (!cont.isCompleted) cont.resumeWithException(RuntimeException(error?.description ?: "Upload error"))
                     }
                     override fun onReschedule(requestId: String?, error: ErrorInfo?) {
-                        if (!cont.isCompleted) cont.resumeWithException(RuntimeException(error?.description ?: "Upload rescheduled"))
                     }
                 })
                 .dispatch()
         }
     }
 
-
-    suspend fun searchByText(query: String): List<Park> {
+    suspend fun searchByText(query: String, userLat: Double? = null, userLng: Double? = null, radiusKm: Double = 24.0): List<Park> {
         val snap = parksRef.get().await()
         val all = snap.children.mapNotNull {
             val park = it.getValue(Park::class.java)
             park?.copy(id = it.key ?: "")
+        }.filter { park ->
+            if (userLat != null && userLng != null) {
+                val distance = Geo.distanceMeters(userLat, userLng, park.lat, park.lng)
+                distance <= radiusKm * 1000
+            } else {
+                true
+            }
         }
         val q = query.trim().lowercase()
         return if (q.isEmpty()) all else all.filter {
@@ -91,3 +103,4 @@ class ParkRepo(
         }
     }
 }
+

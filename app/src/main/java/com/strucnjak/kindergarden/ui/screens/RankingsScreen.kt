@@ -21,10 +21,12 @@ import com.google.firebase.database.FirebaseDatabase
 import com.google.firebase.database.ValueEventListener
 import com.strucnjak.kindergarden.data.model.Park
 import com.strucnjak.kindergarden.data.model.User
+import com.strucnjak.kindergarden.data.repo.UserRepo
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RankingsScreen(onBack: () -> Unit) {
+    val userRepo = remember { UserRepo() }
     var users by remember { mutableStateOf<List<User>>(emptyList()) }
     var parks by remember { mutableStateOf<List<Park>>(emptyList()) }
     var filteredParks by remember { mutableStateOf<List<Park>>(emptyList()) }
@@ -34,16 +36,12 @@ fun RankingsScreen(onBack: () -> Unit) {
     var selectedSortOption by remember { mutableStateOf(0) }
     var showFilterDialog by remember { mutableStateOf(false) }
 
+    LaunchedEffect(Unit) {
+        userRepo.topUsersFlow(limit = 20).collect { users = it }
+    }
+
     DisposableEffect(Unit) {
         val db = FirebaseDatabase.getInstance().reference
-
-        val usersListener = object : ValueEventListener {
-            override fun onDataChange(snapshot: DataSnapshot) {
-                users = snapshot.children.mapNotNull { it.getValue(User::class.java) }
-                    .sortedByDescending { it.points }
-            }
-            override fun onCancelled(error: DatabaseError) {}
-        }
 
         val parksListener = object : ValueEventListener {
             override fun onDataChange(snapshot: DataSnapshot) {
@@ -53,37 +51,31 @@ fun RankingsScreen(onBack: () -> Unit) {
             override fun onCancelled(error: DatabaseError) {}
         }
 
-        db.child("users").addValueEventListener(usersListener)
         db.child("parks").addValueEventListener(parksListener)
 
         onDispose {
-            db.child("users").removeEventListener(usersListener)
             db.child("parks").removeEventListener(parksListener)
         }
     }
 
     LaunchedEffect(parks, searchQuery, selectedSortOption, users) {
-        var result = parks
-
-        if (searchQuery.isNotBlank() && searchQuery.length < 3) {
+        if (searchQuery.isBlank() || searchQuery.length < 3) {
             filteredParks = emptyList()
             return@LaunchedEffect
         }
 
-        if (searchQuery.isNotBlank() && searchQuery.length >= 3) {
-            result = result.filter { park ->
-                val nameMatch = park.name.contains(searchQuery, ignoreCase = true)
-                val typeMatch = park.type.contains(searchQuery, ignoreCase = true)
-                val descMatch = park.desc.contains(searchQuery, ignoreCase = true)
+        var result = parks.filter { park ->
+            val nameMatch = park.name.contains(searchQuery, ignoreCase = true)
+            val typeMatch = park.type.contains(searchQuery, ignoreCase = true)
+            val descMatch = park.desc.contains(searchQuery, ignoreCase = true)
 
-                val author = users.find { it.id == park.authorId }
-                val authorName = author?.name ?: ""
-                val authorUsername = author?.username ?: ""
-                val authorMatch = authorUsername.equals(searchQuery, ignoreCase = true) ||
-                    authorName.contains(searchQuery, ignoreCase = true)
+            val author = users.find { it.id == park.authorId }
+            val authorName = author?.name ?: ""
+            val authorUsername = author?.username ?: ""
+            val authorMatch = authorUsername.equals(searchQuery, ignoreCase = true) ||
+                authorName.contains(searchQuery, ignoreCase = true)
 
-                nameMatch || typeMatch || descMatch || authorMatch
-            }
+            nameMatch || typeMatch || descMatch || authorMatch
         }
 
         result = when (selectedSortOption) {
@@ -163,7 +155,14 @@ fun RankingsScreen(onBack: () -> Unit) {
                             )
                         }
 
-                        if (filteredParks.isEmpty() && searchQuery.isNotEmpty()) {
+                        if (filteredParks.isEmpty() && searchQuery.isEmpty()) {
+                            Box(
+                                modifier = Modifier.fillMaxSize(),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("Unesi najmanje 3 karaktera za pretragu")
+                            }
+                        } else if (filteredParks.isEmpty() && searchQuery.length >= 3) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center

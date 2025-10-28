@@ -1,7 +1,5 @@
 package com.strucnjak.kindergarden.ui.screens
 
-import android.Manifest
-import android.content.pm.PackageManager
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -27,7 +25,6 @@ import com.google.firebase.database.ValueEventListener
 import com.strucnjak.kindergarden.data.model.Park
 import com.strucnjak.kindergarden.data.model.User
 import com.strucnjak.kindergarden.data.repo.ParkRepo
-import kotlin.math.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -39,12 +36,13 @@ fun ParkListScreen(onBack: () -> Unit) {
     var filteredParks by remember { mutableStateOf<List<Park>>(emptyList()) }
     var userLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
     var users by remember { mutableStateOf<List<User>>(emptyList()) }
+    var lastFetchLocation by remember { mutableStateOf<Pair<Double, Double>?>(null) }
 
     var searchName by remember { mutableStateOf("") }
     var searchType by remember { mutableStateOf("") }
     var searchAuthor by remember { mutableStateOf("") }
     var selectedSortOption by remember { mutableStateOf(0) }
-    var selectedRadius by remember { mutableStateOf(2) }
+    val selectedRadius = 4
     var showFilterDialog by remember { mutableStateOf(false) }
 
     val fused = LocationServices.getFusedLocationProviderClient(context)
@@ -64,13 +62,6 @@ fun ParkListScreen(onBack: () -> Unit) {
             override fun onCancelled(error: DatabaseError) { }
         }
         db.child("users").addValueEventListener(usersListener)
-        onDispose {
-            db.child("users").removeEventListener(usersListener)
-        }
-    }
-
-    LaunchedEffect(Unit) {
-        repo.parksFlow().collect { allParks = it }
 
         try {
             @Suppress("MissingPermission")
@@ -80,24 +71,48 @@ fun ParkListScreen(onBack: () -> Unit) {
                 }
             }
         } catch (_: Exception) { }
+
+        onDispose {
+            db.child("users").removeEventListener(usersListener)
+        }
     }
+    LaunchedEffect(userLocation) {
+        if (userLocation != null) {
+            val shouldFetch = lastFetchLocation == null ||
+                com.strucnjak.kindergarden.util.Geo.distanceMeters(
+                    lastFetchLocation!!.first, lastFetchLocation!!.second,
+                    userLocation!!.first, userLocation!!.second
+                ) >= 1000.0
+
+            if (shouldFetch) {
+                lastFetchLocation = userLocation
+                repo.parksFlow(
+                    userLat = userLocation!!.first,
+                    userLng = userLocation!!.second,
+                    radiusKm = 24.0
+                ).collect { allParks = it }
+            }
+        } else {
+            repo.parksFlow().collect { allParks = it }
+        }
+    }
+
 
     LaunchedEffect(allParks, userLocation, selectedRadius) {
         userLocation?.let { (lat, lng) ->
             val radiusMeters = when (selectedRadius) {
-                0 -> 1000.0
-                1 -> 3000.0
+                1 -> 1000.0
                 2 -> 5000.0
                 3 -> 10000.0
                 4 -> 20000.0
-                else -> 5000.0
+                else -> 20000.0
             }
 
             nearbyParks = allParks.mapNotNull { park ->
-                val distance = sqrt(
-                    (park.lat - lat).pow(2.0) +
-                    (park.lng - lng).pow(2.0)
-                ) * 111000
+                val distance = com.strucnjak.kindergarden.util.Geo.distanceMeters(
+                    lat, lng,
+                    park.lat, park.lng
+                )
 
                 if (distance <= radiusMeters) {
                     park to distance
@@ -148,10 +163,10 @@ fun ParkListScreen(onBack: () -> Unit) {
             0 -> {
                 userLocation?.let { (lat, lng) ->
                     result.sortedBy { park ->
-                        sqrt(
-                            (park.lat - lat).pow(2.0) +
-                            (park.lng - lng).pow(2.0)
-                        ) * 111000
+                        com.strucnjak.kindergarden.util.Geo.distanceMeters(
+                            lat, lng,
+                            park.lat, park.lng
+                        )
                     }
                 } ?: result
             }
@@ -283,12 +298,11 @@ fun ParkListScreen(onBack: () -> Unit) {
                     text = buildString {
                         append("Prikazano: ${filteredParks.size}")
                         val radiusText = when (selectedRadius) {
-                            0 -> "1km"
-                            1 -> "3km"
+                            1 -> "1km"
                             2 -> "5km"
                             3 -> "10km"
                             4 -> "20km"
-                            else -> "5km"
+                            else -> "20km"
                         }
                         append(" (radijus: $radiusText)")
                     },
@@ -327,10 +341,10 @@ fun ParkListScreen(onBack: () -> Unit) {
                 ) {
                     items(filteredParks) { park ->
                         val distance = userLocation?.let { (lat, lng) ->
-                            sqrt(
-                                (park.lat - lat).pow(2.0) +
-                                (park.lng - lng).pow(2.0)
-                            ) * 111000
+                            com.strucnjak.kindergarden.util.Geo.distanceMeters(
+                                lat, lng,
+                                park.lat, park.lng
+                            )
                         }
                         ParkListItem(park = park, distance = distance, onClick = { })
                         Spacer(Modifier.height(8.dp))
@@ -343,35 +357,9 @@ fun ParkListScreen(onBack: () -> Unit) {
     if (showFilterDialog) {
         AlertDialog(
             onDismissRequest = { showFilterDialog = false },
-            title = { Text("Filteri i Sortiranje") },
+            title = { Text("Sortiranje") },
             text = {
                 Column {
-                    Text("Radijus pretrage:", style = MaterialTheme.typography.titleSmall)
-                    Spacer(Modifier.height(8.dp))
-
-                    listOf(
-                        0 to "1 km",
-                        1 to "3 km",
-                        2 to "5 km",
-                        3 to "10 km",
-                        4 to "20 km"
-                    ).forEach { (value, label) ->
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clickable { selectedRadius = value }
-                                .padding(vertical = 8.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            RadioButton(selected = selectedRadius == value, onClick = { selectedRadius = value })
-                            Spacer(Modifier.width(8.dp))
-                            Text(label)
-                        }
-                    }
-
-                    Spacer(Modifier.height(16.dp))
-                    HorizontalDivider()
-                    Spacer(Modifier.height(16.dp))
 
                     Text("Sortiraj po:", style = MaterialTheme.typography.titleSmall)
                     Spacer(Modifier.height(8.dp))

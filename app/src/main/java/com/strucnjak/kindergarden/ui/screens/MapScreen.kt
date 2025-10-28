@@ -42,8 +42,6 @@ import com.strucnjak.kindergarden.services.LocationService
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.File
-import kotlin.math.pow
-import kotlin.math.sqrt
 
 
 @OptIn(ExperimentalPermissionsApi::class, ExperimentalMaterial3Api::class)
@@ -58,7 +56,8 @@ fun MapScreen(onProfile: () -> Unit, onRankings: () -> Unit, onParkList: () -> U
     var followEnabled by remember { mutableStateOf(false) }
     var showPermissionDialog by remember { mutableStateOf(false) }
     var showRadiusDialog by remember { mutableStateOf(false) }
-    var selectedRadius by remember { mutableStateOf(0) }
+    var selectedRadius by remember { mutableStateOf(4) }
+    var lastFetchLocation by remember { mutableStateOf<LatLng?>(null) }
 
     val fused = LocationServices.getFusedLocationProviderClient(context)
     var otherUsers by remember { mutableStateOf<Map<String, Pair<Double, Double>>>(emptyMap()) }
@@ -89,21 +88,27 @@ fun MapScreen(onProfile: () -> Unit, onRankings: () -> Unit, onParkList: () -> U
                         userLocation = LatLng(loc.latitude, loc.longitude)
                     }
                 }
-            } catch (e: Exception) {
+            } catch (_: Exception) {
             }
 
             locationsListener = object : ValueEventListener {
                 override fun onDataChange(snapshot: DataSnapshot) {
                     val currentUid = FirebaseAuth.getInstance().currentUser?.uid
                     val allLocations = mutableMapOf<String, Pair<Double, Double>>()
+                    val currentTime = System.currentTimeMillis()
 
                     snapshot.children.forEach { child ->
                         val uid = child.key ?: return@forEach
                         val lat = (child.child("lat").value as? Number)?.toDouble()
                         val lng = (child.child("lng").value as? Number)?.toDouble()
+                        val timestamp = (child.child("timestamp").value as? Number)?.toLong()
 
                         if (lat != null && lng != null) {
-                            allLocations[uid] = Pair(lat, lng)
+                            if (uid == currentUid) {
+                                allLocations[uid] = Pair(lat, lng)
+                            } else if (timestamp != null && (currentTime - timestamp) <= 90000) {
+                                allLocations[uid] = Pair(lat, lng)
+                            }
                         }
                     }
 
@@ -144,9 +149,24 @@ fun MapScreen(onProfile: () -> Unit, onRankings: () -> Unit, onParkList: () -> U
             db.child("users").removeEventListener(usersListener)
         }
     }
+    LaunchedEffect(userLocation) {
+        if (userLocation != null) {
+            val shouldUpdateFetch = lastFetchLocation == null ||
+                com.strucnjak.kindergarden.util.Geo.distanceMeters(
+                    lastFetchLocation!!.latitude, lastFetchLocation!!.longitude,
+                    userLocation!!.latitude, userLocation!!.longitude
+                ) >= 1000.0
 
-    LaunchedEffect(Unit) {
-        repo.parksFlow().collect { parks = it }
+            if (shouldUpdateFetch) {
+                lastFetchLocation = userLocation
+            }
+
+            repo.parksFlow(
+                userLat = userLocation!!.latitude,
+                userLng = userLocation!!.longitude,
+                radiusKm = 24.0
+            ).collect { parks = it }
+        }
     }
 
     var hasInitiallyZoomed by remember { mutableStateOf(false) }
@@ -193,20 +213,20 @@ fun MapScreen(onProfile: () -> Unit, onRankings: () -> Unit, onParkList: () -> U
             }
         }
 
-        if (selectedRadius > 0 && userLocation != null) {
+        if (userLocation != null) {
             val radiusMeters = when (selectedRadius) {
                 1 -> 1000.0
                 2 -> 5000.0
                 3 -> 10000.0
                 4 -> 20000.0
-                else -> Double.MAX_VALUE
+                else -> 20000.0
             }
 
             result = result.filter { park ->
-                val distance = sqrt(
-                    (park.lat - userLocation!!.latitude).pow(2.0) +
-                    (park.lng - userLocation!!.longitude).pow(2.0)
-                ) * 111000
+                val distance = com.strucnjak.kindergarden.util.Geo.distanceMeters(
+                    userLocation!!.latitude, userLocation!!.longitude,
+                    park.lat, park.lng
+                )
                 distance <= radiusMeters
             }
         }
@@ -245,7 +265,6 @@ fun MapScreen(onProfile: () -> Unit, onRankings: () -> Unit, onParkList: () -> U
                     Spacer(Modifier.height(8.dp))
 
                     listOf(
-                        0 to "Svi parkovi",
                         1 to "1 km",
                         2 to "5 km",
                         3 to "10 km",
@@ -330,7 +349,7 @@ fun MapScreen(onProfile: () -> Unit, onRankings: () -> Unit, onParkList: () -> U
             )
         }
 
-        if (selectedRadius > 0 || search.text.isNotEmpty()) {
+        if (search.text.isNotEmpty()) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -341,23 +360,21 @@ fun MapScreen(onProfile: () -> Unit, onRankings: () -> Unit, onParkList: () -> U
                 Text(
                     text = buildString {
                         append("Prikazano: ${filteredParks.size}/${parks.size}")
-                        if (selectedRadius > 0) {
-                            val radiusText = when (selectedRadius) {
-                                1 -> "1km"
-                                2 -> "5km"
-                                3 -> "10km"
-                                4 -> "20km"
-                                else -> ""
-                            }
-                            append(" (radijus: $radiusText)")
+                        val radiusText = when (selectedRadius) {
+                            1 -> "1km"
+                            2 -> "5km"
+                            3 -> "10km"
+                            4 -> "20km"
+                            else -> "20km"
                         }
+                        append(" (radijus: $radiusText)")
                     },
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.primary
                 )
-                if (selectedRadius > 0 || search.text.isNotEmpty()) {
+                if (search.text.isNotEmpty()) {
                     TextButton(onClick = {
-                        selectedRadius = 0
+                        selectedRadius = 4
                         search = TextFieldValue("")
                     }) {
                         Text("Obriši filtere", style = MaterialTheme.typography.bodySmall)
@@ -407,10 +424,10 @@ fun MapScreen(onProfile: () -> Unit, onRankings: () -> Unit, onParkList: () -> U
                     val username = user?.username ?: "Korisnik"
 
                     val title = if (userLocation != null) {
-                        val distance = sqrt(
-                            (pos.first - userLocation!!.latitude).pow(2.0) +
-                            (pos.second - userLocation!!.longitude).pow(2.0)
-                        ) * 111000
+                        val distance = com.strucnjak.kindergarden.util.Geo.distanceMeters(
+                            userLocation!!.latitude, userLocation!!.longitude,
+                            pos.first, pos.second
+                        )
 
                         if (distance <= 100.0) {
                             "$username u blizini (${distance.toInt()}m)"
@@ -544,10 +561,10 @@ private fun AddParkDialog(
                             }
 
                             val existingParks = parks.filter { park ->
-                                val distance = sqrt(
-                                    (park.lat - loc.latitude).pow(2.0) +
-                                    (park.lng - loc.longitude).pow(2.0)
-                                ) * 111000
+                                val distance = com.strucnjak.kindergarden.util.Geo.distanceMeters(
+                                    loc.latitude, loc.longitude,
+                                    park.lat, park.lng
+                                )
                                 distance < 50.0
                             }
 

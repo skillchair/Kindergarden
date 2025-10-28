@@ -18,13 +18,9 @@ fun SearchScreen() {
     val repo = remember { ParkRepo() }
     var parks by remember { mutableStateOf<List<Park>>(emptyList()) }
     var query by remember { mutableStateOf("") }
-    var radius by remember { mutableStateOf("1000") }
+    var radius by remember { mutableStateOf("20000") }
     var current by remember { mutableStateOf<Location?>(null) }
     val context = androidx.compose.ui.platform.LocalContext.current
-
-    LaunchedEffect(Unit) {
-        parks = repo.searchByText("")
-    }
 
     LaunchedEffect(Unit) {
         val fused = LocationServices.getFusedLocationProviderClient(context)
@@ -32,6 +28,19 @@ fun SearchScreen() {
             @Suppress("MissingPermission")
             fused.lastLocation.addOnSuccessListener { current = it }
         } catch (_: Exception) { }
+    }
+
+    LaunchedEffect(current) {
+        parks = if (current != null) {
+            repo.searchByText(
+                "",
+                userLat = current!!.latitude,
+                userLng = current!!.longitude,
+                radiusKm = 24.0
+            )
+        } else {
+            repo.searchByText("")
+        }
     }
 
     Column(Modifier.fillMaxSize().padding(16.dp)) {
